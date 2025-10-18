@@ -1,0 +1,325 @@
+---
+title: "Third Party Support"
+author: "Adaline Powell"
+output: 
+  html_document:
+    theme: darkly
+    toc: true
+    toc_float: true
+    code_folding: hide
+date: "2024-03-21"
+---
+
+## Introduction
+Within American Politics, the field tends to direct most attention to the two main parties. Furthermore, in aims of understanding elections, voting behavior, etc., scholars tend to utilize explanations based solely on the Democratic and Republican parties. Rarely do we find scholars focusing on third parties. 
+
+In the 2020 election, aside from the major party candidates, Trump and Biden, there were additional third-party candidates where little attention was turned to. These candidates include Jo Jorgensen for the Libertarian Party and Howie Hawkins for the Green Party. 
+
+The purpose of this lab is to further investigate these third-party candidates. This lab seeks to answer the question of what factors influence an individual's support for these candidates. Specifically, this lab intends to answer the following questions: 
+
+###### What predicts support for these types of candidates? Are these predictors different for liberal third-party candidates and conservative candidates? 
+
+## Data/Methods
+In order to answer this question, I will be utilizing data from the 2020 ANES. I will be building a multinomial regression model in order to compare the third-party candidates to the major party candidates. The variables used include: 
+
+- Candidate Vote 
+- Party Registration 
+- Sex 
+- Race 
+- Ideology
+
+The candidate variable is coded to include the options: Biden, Trump, Jorgensen, Howie, and Other. Party ID is coded as Democrat, Republican, or Independent. Race is coded to include categories such as White, Black, Hispanic, Asian, Native American, or Multiple. Ideology is coded from -3 (strongly liberal) to 3 (strongly conservative). Sex includes male and female.
+
+```{r, include=FALSE}
+require(foreign) 
+
+require(ggplot2) 
+
+require(MASS) # Orinal logit function in hear 
+
+require(Hmisc) 
+
+require(reshape2) 
+
+library(sjPlot) 
+
+library(ggeffects) 
+
+library(dplyr) 
+
+library(tidyr) 
+
+require(nnet) # Multinomial regression function in hear 
+
+library(patchwork) 
+```
+
+
+```{r, include=FALSE}
+anesn <- read.csv("~/Desktop/703 /Week 8/anes_timeseries_2020_csv_20220210/anes_timeseries_2020_csv_20220210.csv")
+
+
+anes_clean <- data.frame(matrix(NA, nrow = 8280, ncol = 0)) 
+
+cbp2 <- c("#000000", "#E69F00", "#56B4E9", "#009E73", 
+          
+          "#F0E442", "#D55E00", "#CC79A7") 
+
+```
+
+
+```{r, include=FALSE}
+anes_clean$ide <- NA 
+
+anes_clean$ide[anesn$V201200 == 1] <- -3 #liberal
+anes_clean$ide[anesn$V201200 == 2] <- -2 
+anes_clean$ide[anesn$V201200 == 3] <- -1 
+anes_clean$ide[anesn$V201200 == 4] <- 0 
+anes_clean$ide[anesn$V201200 == 5] <- 1 
+anes_clean$ide[anesn$V201200 == 6] <- 2 
+anes_clean$ide[anesn$V201200 == 7] <- 3 
+
+
+
+anes_clean$pd <- NA
+#table(anes$V201228) 
+
+anes_clean$pd[anesn$V201228 == 1] <- "Democrat" 
+anes_clean$pd[anesn$V201228 == 2] <- "Republican" 
+anes_clean$pd[anesn$V201228 == 3] <- "Independant" 
+
+
+
+anes_clean$race <- NA 
+
+anes_clean$race [anesn$V201549x == 1] <- "1White" 
+anes_clean$race [anesn$V201549x == 2] <- "Black" 
+anes_clean$race [anesn$V201549x == 3] <- "Other" 
+anes_clean$race [anesn$V201549x == 4] <- "Other" 
+anes_clean$race [anesn$V201549x == 5] <- "Other" 
+anes_clean$race [anesn$V201549x == 6] <- "Other" 
+
+#t1 <- table(anes_clean$race, anes_clean$canidate)
+
+anes_clean$canidate <- NA 
+#table(anesn$V202073) 
+
+anes_clean$canidate [anesn$V202073== 1] <- "Biden" 
+anes_clean$canidate [anesn$V202073== 2] <- "Trump" 
+anes_clean$canidate [anesn$V202073== 3] <- "Jorgenson" 
+anes_clean$canidate [anesn$V202073== 4] <- "Howie" 
+anes_clean$canidate [anesn$V202073== 5] <- "Other"
+anes_clean$canidate <- factor(anes_clean$canidate) 
+anes_clean$canidate <- relevel(anes_clean$canidate, ref = "Jorgenson") 
+
+
+anes_clean$sex <- NA 
+
+anes_clean$sex [anesn$V201600== 1] <- "Male" 
+anes_clean$sex [anesn$V201600== 2] <- "Female" 
+
+
+
+
+
+```
+
+
+```{r,include=FALSE}
+
+library(kableExtra)
+
+#kbl(t1, caption = "Table 1") %>%
+ # kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+
+## Analysis
+
+```{r, include=FALSE}
+mod_mr <- multinom(canidate ~ pd + ide +race + sex, data = anes_clean) 
+
+#summary(mod_mr) 
+
+```
+
+
+
+
+First, looking at the impact of sex on the predicted probability of supporting third-party candidates, it seems that sex doesn't  contribute to explaining support for third-party candidates. The patterns of support based on sex appear similar across all candidates. Moreover, when examining Figure 1, we observe that the data points cluster similarly for all candidates based on sex.
+
+Now, looking at Table 1, we find that the probability of supporting another candidate compared to Jorgensen decreases for only two candidates. Specifically, we see a decrease in the probability for Trump in comparison to Jorgensen when the individual is male, as well as when individuals are voting for other candidates. However, it's noteworthy that these probabilities do not drop below 0.8.
+
+
+
+```{r, echo=FALSE}
+
+g2 <- ggpredict(mod_mr, terms=c("sex")) 
+
+
+
+ggplot(g2, aes(x=x, y=predicted, colour=response.level)) + 
+  #geom_point(size = 3) + 
+  geom_jitter(shape = 19, width = 0.1, size = 3) +  
+  theme_bw() +  
+  ggtitle("Figure 1") +
+  theme(legend.position="right") +  
+  scale_color_manual(values = cbp2, 
+                     breaks=c('Biden', 
+                              'Trump', 
+                              'Jorgenson',
+                              'Howie',
+                              'Other')) + 
+  labs(x="Sex",  
+        y = "Predicted Probability",  
+       colour = "Response\nCategory") 
+
+
+
+
+```
+
+
+
+Similarly, the party and ideology variable seems to be more effective at explaining the predicted probability of major candidates rather than third-party candidates. In Figure 2 and 3, we observe that all third-party candidates cluster around lower probabilities across all parties. Consistently, in Table 1, we find that the probability of supporting Jorgensen compared to any other party is notably lower. Moreover, this probability tends to be less than or decrease when compared to other candidates.
+
+
+
+
+```{r, echo=FALSE}
+
+g3 <- ggpredict(mod_mr, terms=c("pd")) 
+
+
+
+ggplot(g3, aes(x=x, y=predicted, colour=response.level)) + 
+  #geom_point(size = 3) + 
+  geom_jitter(shape = 19, width = 0.1, size = 3) +  
+  ggtitle("Figure 2") +
+  theme_bw() +  
+  theme(legend.position="right") +  
+  scale_color_manual(values = cbp2, 
+                     breaks=c('Biden', 
+                              'Trump', 
+                              'Jorgenson',
+                              'Howie',
+                              'Other')) + 
+  labs(x="Party",  
+        y = "Predicted Probability",  
+       colour = "Response\nCategory") 
+
+
+
+
+```
+
+
+```{r, echo=FALSE}
+g5 <- ggpredict(mod_mr, terms=c("ide")) 
+
+
+ggplot(g5, aes(x=x, y=predicted, colour=response.level)) + 
+  geom_line(linewidth=2) + 
+  # facet_wrap(~group) +  
+  theme_bw() +  
+  theme(legend.position="right") +  
+  scale_color_manual(values = cbp2, 
+                     breaks=c('Biden', 
+                              'Trump', 
+                              'Jorgenson',
+                              'Howie',
+                              'Other')) + 
+  labs(x="Ideology",  
+        y = "Predicted Probability",  
+       colour = "Response\nCategory") 
+
+
+
+
+```
+
+
+
+Unfortunately, similar patterns are observed within race. The probability of voting for any candidate compared to Jorgensen remains relatively consistent across different racial groups. The most notable difference is apparent when comparing other candidates to Jorgensen. Moreover, we observe that the probability of voting for another candidate compared to Jorgensen decreases by 0.46 when the individual is Black compared to White. However, the probability of voting for other candidates over Jorgensen increases approximately twofold when the individual belongs to another racial group compared to White.
+
+
+
+```{r, echo=FALSE}
+g4 <- ggpredict(mod_mr, terms=c("race")) 
+
+
+
+ggplot(g4, aes(x=x, y=predicted, colour=response.level)) + 
+  #geom_point(size = 3) + 
+  geom_jitter(shape = 19, width = 0.1, size = 3) +  
+  theme_bw() +  
+  ggtitle("Figure 3") +
+  theme(legend.position="right") +  
+  scale_color_manual(values = cbp2, 
+                     breaks=c('Biden', 
+                              'Trump', 
+                              'Jorgenson',
+                              'Howie',
+                              'Other')) + 
+  labs(x="Race",  
+        y = "Predicted Probability",  
+       colour = "Response\nCategory") 
+
+
+
+
+```
+
+
+
+
+
+
+
+```{r, echo=FALSE, warning=FALSE}
+
+tab_model(mod_mr, title= "Table 2",
+          dv.labels= c("Canidate Support"),
+          pred.labels = c("{Intercept-B}",
+                          "Party [Indp]",
+                          "Party [Rep]",
+                          "Ideology",
+                          "Race[Black]",
+                          "Race[Other]",
+                          "Sex[Male]",
+          "{Intercept-H}",
+                          "Party [Indp]",
+                          "Party [Rep]",
+                          "Ideology",
+                          "Race[Black]",
+                          "Race[Other]",
+                          "Sex[Male]", 
+"{Intercept-O}", 
+"Party [Indp]",
+                          "Party [Rep]",
+                          "Ideology",
+                          "Race[Black]",
+                          "Race[Other]",
+                          "Sex[Male]",
+ "{Intercept-T}",
+                          "Party [Indp]",
+                          "Party [Rep]",
+                          "Ideology",
+                          "Race[Black]",
+                          "Race[Other]",
+                          "Sex[Male]"),
+          emph.p = F,
+          p.adjust = "fdr") 
+```
+
+
+
+
+
+
+
+
+## Discussion
+
+Overall, it appears that the variables examined in this analysis do not efficiently explain the support for third-party candidates. None of the predicted probabilities reach sufficiently values to effectively explain support for third-party candidates. One main reason for this may be the choice of variables, which are commonly used to explain support for major parties. Further investigation is necessary to explore additional characteristics that may better explain support for third-party candidates. Possible variables to consider could include support for specific policies or issues. These additional variables may offer greater insight into the factors influencing support for third-party candidates.
+
