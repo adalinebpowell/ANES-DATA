@@ -1,0 +1,528 @@
+---
+title: "AgeXPID7"
+author: "Adaline Powell"
+date: "2024-10-10"
+output: 
+  html_document:
+    theme: darkly
+    toc: true
+    toc_float: true
+    code_folding: hide
+---
+
+# Motivation
+On page 157 of Who Are Leaners?, the authors ask, "Given that leaners often have strong partisan connections, why are they reluctant to identify as Democrats or Republicans?" Additionally, on page 180 of Partisan Affinities, the authors state, "Continued party loyalty notwithstanding, the leaners do not see themselves tied to a party." This raises the question: Why do leaners not see themselves tied to a party? What factors influence them to avoid identifying with or aligning themselves more strongly with these parties?
+
+The main motivation behind this analysis stems from my curiosity about whether we can determine which groups are more likely to identify as independents. Much of the literature suggests that younger voters often have not solidified their partisan identities, leading me to investigate: To what extent do younger individuals identify as independents compared to older generations? I also wanted to explore whether younger cohorts have a higher proportion of individuals identifying as independents.
+
+# Data
+I used data from the 2020 American National Election Studies (ANES) survey. This dataset contains information about respondents’ party identification, demographics, and political behaviors.
+
+# Method
+To answer the research questions, I used a multinomial regression model to predict the likelihood of identifying as an independent.The model includes several variables:
+
+- Age cohort (categorized into groups such as 18-24, 25-29, etc.)
+- Sex
+- Race (White, Black, Hispanic, Asian/Native Hawaiian/Pacific Islander, Native American/Alaska Native, multiple races)
+- Political ideology (coded from liberal to conservative on a 7-point scale)
+- Education (less than high school, high school, some college, bachelor's degree, graduate degree)
+- Income (categorized into quartiles)
+- Party identification (7-point PID scale: Strong Democrat to Strong Republican)
+
+I first conducted a general analysis of these variables, then used predictive probability plots to assess the likelihood of each age cohort identifying with each point on the PID scale.
+
+
+
+```{r, include=FALSE}
+
+## Why multinomial regreassion? Dependent variabel has more than two levels that are not numeric
+require(foreign) 
+require(ggplot2) 
+require(MASS) # Orinal logit function in hear 
+require(Hmisc) 
+require(reshape2) 
+library(sjPlot) 
+library(ggeffects) 
+library(dplyr) 
+library(tidyr) 
+library(haven)
+require(nnet) # Multinomial regression function in hear 
+library(patchwork) 
+library(knitr)
+
+
+cs1 <- c("#0044CC","#808080","#CC0000" )
+cs2 <- c("#0044CC","#808080","#CC0000", "#6699FF", "#99CCFF", "#FF6666","#FF9999")
+
+```
+
+
+```{r, include=FALSE}
+anesn <- read.csv("~/Desktop/1st year /703 /Week 8/anes_timeseries_2020_csv_20220210/anes_timeseries_2020_csv_20220210.csv")
+anesn16 <- read_sav("~/Desktop/Race Project copy/Data/anes_timeseries_2016_sav/anes_timeseries_2016.sav")
+
+
+anes_clean <- data.frame(matrix(NA, nrow = 8280, ncol = 0)) 
+anes_clean16 <- data.frame(matrix(NA, nrow= 4270, ncol=0))
+
+
+table(anesn$V201507x)
+
+```
+
+
+
+```{r, include=FALSE}
+
+
+anes_clean$age <- NA
+anes_clean$age <- anesn$V201507x 
+anes_clean$age[anes_clean$age == -9] <- NA
+# Cohorts 18-24, 25-29, 30-39,40-49,50-59, 60-69, 70-79, and 80 up
+#https://www.pewresearch.org/politics/2024/04/09/age-generational-cohorts-and-party-identification/
+
+anes_clean$age_cohort <- NA  # Initialize the new cohort variable
+
+anes_clean$age_cohort[anes_clean$age >= 18 & anes_clean$age <= 24] <- "18-24"
+anes_clean$age_cohort[anes_clean$age >= 25 & anes_clean$age <= 29] <- "25-29"
+anes_clean$age_cohort[anes_clean$age >= 30 & anes_clean$age <= 39] <- "30-39"
+anes_clean$age_cohort[anes_clean$age >= 40 & anes_clean$age <= 49] <- "40-49"
+anes_clean$age_cohort[anes_clean$age >= 50 & anes_clean$age <= 59] <- "50-59"
+anes_clean$age_cohort[anes_clean$age >= 60 & anes_clean$age <= 69] <- "60-69"
+anes_clean$age_cohort[anes_clean$age >= 70 & anes_clean$age <= 79] <- "70-79"
+anes_clean$age_cohort[anes_clean$age >= 80] <- "80+"
+
+
+anes_clean$ide <- NA 
+
+anes_clean$ide[anesn$V201200 == 1] <- -3 #liberal
+anes_clean$ide[anesn$V201200 == 2] <- -2 
+anes_clean$ide[anesn$V201200 == 3] <- -1 
+anes_clean$ide[anesn$V201200 == 4] <- 0 
+anes_clean$ide[anesn$V201200 == 5] <- 1 
+anes_clean$ide[anesn$V201200 == 6] <- 2 
+anes_clean$ide[anesn$V201200 == 7] <- 3 
+
+
+
+anes_clean$pd <- NA
+#table(anes$V201228) 
+
+anes_clean$pd7[anesn$V201231x == 1] <- "Strong Democrat" 
+anes_clean$pd7[anesn$V201231x == 2] <- "Weak Democrat" 
+anes_clean$pd7[anesn$V201231x == 3] <- "Indep Democrat" 
+anes_clean$pd7[anesn$V201231x == 4] <- "Independant" 
+anes_clean$pd7[anesn$V201231x == 5] <- "Indep Republican" 
+anes_clean$pd7[anesn$V201231x == 6] <- "Weak Republican" 
+anes_clean$pd7[anesn$V201231x == 7] <- "Strong Republican" 
+
+anes_clean$p7[anesn$V201231x == 1] <- "Strong " 
+anes_clean$p7[anesn$V201231x == 2] <- "Weak " 
+anes_clean$p7[anesn$V201231x == 3] <- "Lean " 
+anes_clean$p7[anesn$V201231x == 4] <- "Independant" 
+anes_clean$p7[anesn$V201231x == 5] <- "Lean " 
+anes_clean$p7[anesn$V201231x == 6] <- "Weak " 
+anes_clean$p7[anesn$V201231x == 7] <- "Strong " 
+
+
+anes_clean$race <- NA 
+
+anes_clean$race [anesn$V201549x == 1] <- "1White" 
+anes_clean$race [anesn$V201549x == 2] <- "Black" 
+anes_clean$race [anesn$V201549x == 3] <- "Other" 
+anes_clean$race [anesn$V201549x == 4] <- "Other" 
+anes_clean$race [anesn$V201549x == 5] <- "Other" 
+anes_clean$race [anesn$V201549x == 6] <- "Other" 
+
+#t1 <- table(anes_clean$race, anes_clean$canidate)
+
+anes_clean$canidate <- NA 
+#table(anesn$V202073) 
+
+
+anes_clean$sex <- NA 
+
+anes_clean$sex [anesn$V201600== 1] <- "Male" 
+anes_clean$sex [anesn$V201600== 2] <- "Female" 
+
+
+anes_clean$race <- NA 
+
+anes_clean$race [anesn$V201549x == 1] <- "White" 
+anes_clean$race [anesn$V201549x == 2] <- "Black" 
+anes_clean$race [anesn$V201549x == 3] <- "Hispanic" 
+anes_clean$race [anesn$V201549x == 4] <- "A/NW/PI" #Asian or Native Hawaiian/other Pacific Islander,
+anes_clean$race [anesn$V201549x == 5] <- "NA/AN" #Native American/Alaska Native or other race
+anes_clean$race [anesn$V201549x == 6] <- "Mutiple" 
+
+
+anes_clean$income[anesn$V201617x == 1 | anesn$V201617x == 2 | anesn$V201617x == 3 | anesn$V201617x == 4] <- 1  # Quartile 1: Under $24,999
+anes_clean$income[anesn$V201617x == 5 | anesn$V201617x == 6 | anesn$V201617x == 7 | anesn$V201617x == 8 | anesn$V201617x == 9 | anesn$V201617x == 10] <- 2  # Quartile 2: $25,000 - $59,999
+anes_clean$income[anesn$V201617x == 11 | anesn$V201617x == 12 | anesn$V201617x == 13 | anesn$V201617x == 14 | anesn$V201617x == 15] <- 3  # Quartile 3: $60,000 - $89,999
+anes_clean$income[anesn$V201617x == 16 | anesn$V201617x == 17 | anesn$V201617x == 18 | anesn$V201617x == 19 | anesn$V201617x == 20 | anesn$V201617x == 21 | anesn$V201617x == 22] <- 4  # Quartile 4: $90,000 or more
+
+anes_clean$education[anesn$V201511x == 1] <- 1   # 1. Less than high school credential
+anes_clean$education[anesn$V201511x == 2] <- 2   # 2. High school credential
+anes_clean$education[anesn$V201511x == 3] <- 3   # 3. Some post-high school, no bachelor’s degree
+anes_clean$education[anesn$V201511x == 4] <- 4   # 4. Bachelor’s degree
+anes_clean$education[anesn$V201511x == 5] <- 5   # 5. Graduate degree
+
+
+d <- c("Strong Democrat",     
+    "Weak Democrat" ,       
+    "Indep Democrat" ,     
+    "Independant",         
+    "Indep Republican",    
+    "Weak Republican" ,     
+    "Strong Republican")
+
+# Convert x to a factor with the specified order
+anes_clean$pd7 <- factor(anes_clean$pd7, levels = d)
+
+ddd <- c("Strong ", 
+    "Weak " ,
+    "Lean ",
+    "Independant")
+
+# Convert x to a factor with the specified order
+anes_clean$p7 <- factor(anes_clean$p7, levels = ddd)
+
+
+```
+
+
+
+
+```{r, include=FALSE}
+anes_clean16$pd7 <- NA
+
+anes_clean16$pd7[anesn16$V161158x == 1] <- "Strong Democrat" 
+anes_clean16$pd7[anesn16$V161158x == 2] <- "Weak Democrat" 
+anes_clean16$pd7[anesn16$V161158x == 3] <- "Indep Democrat" 
+anes_clean16$pd7[anesn16$V161158x == 4] <- "Independant" 
+anes_clean16$pd7[anesn16$V161158x == 5] <- "Indep Republican" 
+anes_clean16$pd7[anesn16$V161158x == 6] <- "Weak Republican" 
+anes_clean16$pd7[anesn16$V161158x == 7] <- "Strong Republican" 
+
+
+
+
+
+anes_clean16$age <- NA
+anes_clean16$age[anesn16$V161267x == 1] <- "18 - 24"
+anes_clean16$age[anesn16$V161267x == 2] <- "18 - 24"
+anes_clean16$age[anesn16$V161267x == 3] <- "25 - 29"
+anes_clean16$age[anesn16$V161267x == 4] <- "30 - 39"
+anes_clean16$age[anesn16$V161267x == 5] <- "30 - 39"
+anes_clean16$age[anesn16$V161267x == 6] <- "40 - 49"
+anes_clean16$age[anesn16$V161267x == 7] <- "40 - 49"
+anes_clean16$age[anesn16$V161267x == 8] <- "50 - 59"
+anes_clean16$age[anesn16$V161267x == 9] <- "50 - 59"
+anes_clean16$age[anesn16$V161267x == 10] <- "60 - 69"
+anes_clean16$age[anesn16$V161267x == 11] <- "60 - 69"
+anes_clean16$age[anesn16$V161267x == 12] <- "70 - 74"
+anes_clean16$age[anesn16$V161267x == 13] <- "75+"
+```
+
+
+
+```{r, include=FALSE}
+anes_clean16 <- anes_clean16 %>%
+  filter(!is.na(age), !is.na(pd7))
+
+ggplot(anes_clean16, aes(x = age, fill = pd7)) +
+  geom_bar(position = "dodge") +
+  scale_fill_manual(values = c(
+    "Strong Democrat" = "#0044CC",     # Dark Blue
+    "Weak Democrat" = "#6699FF",       # Light Blue
+    "Indep Democrat" = "#99CCFF",      # Very Light Blue
+    "Independant" = "#808080",         # Grey
+    "Indep Republican" = "#FF9999",    # Very Light Red
+    "Weak Republican" = "#FF6666",     # Light Red
+    "Strong Republican" = "#CC0000"    # Dark Red
+  )) +
+  labs(title = "Party Identification by Age Cohort (2016)",
+       x = "Age Cohort",
+       y = "Count",
+       fill = "Party ID") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+```
+
+
+# Exploratory
+
+This figure shows the distribution of party identification across various age cohorts. A key observation is that the majority of survey respondents fall within the 30-80 age range, with significantly fewer individuals in the 18-30 and 80+ age groups. This imbalance is important to keep in mind when interpreting the analysis, as it could affect the representativeness of the findings for the younger and oldest cohorts. The smaller sample sizes for the youngest and oldest cohorts might skew the results, making it harder to generalize patterns of party identification across all age groups. Therefore, any interpretations based on this graph should be made cautiously, considering the varying cohort sizes.
+
+
+```{r, message=FALSE, echo=FALSE}
+anes_clean <- anes_clean %>%
+  filter(!is.na(age_cohort), !is.na(pd7))
+
+ggplot(anes_clean, aes(x = age_cohort, fill = pd7)) +
+  geom_bar(position = "dodge") +
+  scale_fill_manual(values = c(
+    "Strong Democrat" = "#0044CC",     # Dark Blue
+    "Weak Democrat" = "#6699FF",       # Light Blue
+    "Indep Democrat" = "#99CCFF",      # Very Light Blue
+    "Independant" = "#808080",         # Grey
+    "Indep Republican" = "#FF9999",    # Very Light Red
+    "Weak Republican" = "#FF6666",     # Light Red
+    "Strong Republican" = "#CC0000"    # Dark Red
+  )) +
+  labs(title = "Party Identification by Age Cohort",
+       x = "Age Cohort",
+       y = "Count",
+       fill = "Party ID") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+The next two tables provide a clearer understanding of party identification across different age cohorts. I used two different measures of party identification: the full 7-point scale and a simplified version where I categorized party identification into four broader groups—Independent, Lean, Strong, and Weak partisans. This simplified version makes it easier to observe overall trends across the data.
+
+In Table 1, which uses the 7-point scale, each column adds up to 100%, showing the distribution of party identification within each age cohort. The focus here is on the first three rows, and the key takeaway is the pattern across cohorts for independent identifiers:
+
+- The percentage of individuals identifying as Independent Democrats decreases as age increases. Younger cohorts are more likely to identify as Independent Democrats, while older cohorts are less likely.
+
+- The percentages fluctuate across age cohorts and Independent Republicans, showing a parabolic trend where the middle cohorts have higher proportions, while younger and older cohorts have lower percentages.
+
+- Similar to Independent Democrats, the proportion of pure independents also decreases with age, meaning younger individuals are more likely to identify as independent compared to older generations.
+
+- Weak Democrats and Weak Republicans, we observe a more fluctuating pattern. Weak Democrats show a decreasing trend with age, while Weak Republicans display more of a parabolic pattern, similar to Independent Republicans.
+
+- Strong Democrats and Strong Republicans exhibit an increasing trend with age. For instance, strong Republican identifiers increase significantly from 12% in younger cohorts to 33% in older cohorts.
+
+
+```{r, message=FALSE, echo=FALSE}
+proportion_table <- anes_clean %>%
+  group_by(age_cohort, pd7) %>%
+  summarise(count = n()) %>%                   
+  mutate(total = sum(count),                   
+         proportion = count / total * 100) %>% 
+  ungroup()                                    
+
+wide_table <- proportion_table %>%
+  select(pd7, age_cohort, proportion) %>%      
+  pivot_wider(names_from = age_cohort, values_from = proportion) 
+
+wide_table %>%
+  kable(digits = 2, caption = "Proportion of Party Identification (7) by Age Cohort",
+        col.names = c("PID", names(wide_table)[-1]))
+
+p2 <- anes_clean %>%
+  group_by(age_cohort, p7) %>%
+  summarise(count = n()) %>%                   
+  mutate(total = sum(count),                   
+         proportion = count / total * 100) %>% 
+  ungroup()                                    
+
+wide_table <- p2 %>%
+  select(p7, age_cohort, proportion) %>%      
+  pivot_wider(names_from = age_cohort, values_from = proportion) 
+
+
+wide_table %>%
+  kable(digits = 2, caption = "Proportion of Party Identification Strength by Age Cohort",
+        col.names = c("PID", names(wide_table)[-1]))
+
+
+
+
+library(sjmisc)
+
+#sjt.xtab(anes_clean$age_cohort, anes_clean$p7, show.col.prc = TRUE)
+
+```
+
+Table 2, which simplifies party identification into Independent, Lean, Weak, and Strong categories, reinforces these patterns:
+
+- There is a clear decrease in the proportion of independents and lean partisans as we move into older cohorts. Younger individuals are more likely to identify as independent or leaning, while older individuals tend to shift towards stronger partisanship.
+
+- The pattern for weak partisans is less consistent, with fluctuations across age groups. However, there's no clear upward or downward trend like in the other categories.
+
+- Younger generations have a lower percentage of strong identifiers, while older generations are much more likely to identify as strong partisans.
+
+```{r, include=FALSE}
+proportion_table <- anes_clean16 %>%
+  group_by(age, pd7) %>%
+  summarise(count = n()) %>%                   #number of respndents in each group
+  mutate(total = sum(count),                   # rrespondents in each cohort
+         proportion = count / total * 100) %>% #percentage
+  ungroup()                                    # Ungroup
+
+# Reshape the data to have pd7 in the first column and cohorts in otherr columns
+wide_table <- proportion_table %>%
+  select(pd7, age, proportion) %>%      
+  pivot_wider(names_from = age, values_from = proportion) 
+
+wide_table %>%
+  kable(digits = 2, caption = "Proportion of Party Identification by Age Cohort (2016)")
+
+
+```
+
+
+
+
+
+
+
+# The Model
+
+```{r, include=FALSE}
+
+m1 <- multinom(p7 ~ age_cohort + race + sex+ income + education, data = anes_clean) 
+
+
+
+g5 <- ggpredict(m1, terms=c("age_cohort")) 
+
+dd <- c("18-24",	"25-29",	"30-39",	"40-49",	"50-59",	"60-69",	"70-79",	"80+")
+
+g5$x <- factor(g5$x, levels = dd)
+
+ggplot(g5, aes(x=x, y=predicted, colour=response.level)) + 
+  #geom_point(size = 3) + 
+  geom_jitter(shape = 19, width = 0.1, size = 3) +  
+  ggtitle("Figure 2") +
+  theme_bw() +  
+  theme(legend.position="right") +  
+  scale_fill_manual(values = cs1,
+                    breaks=c('Strong ',
+                             'Independant ',
+                             'Lean ',
+                             'Weak ')) +
+  labs(x="Age",  
+        y = "Predicted Probability",  
+       colour = "Response\nCategory")
+
+```
+
+
+```{r, message=FALSE, echo=FALSE}
+
+ggplot(g5, aes(x=x, y=predicted, colour=response.level)) + 
+  #geom_point(size = 3) + 
+  geom_jitter(shape = 19, width = 0.1, size = 3) +  
+  ggtitle("Figure 2") +
+  theme_bw() +  
+  theme(legend.position="right") +  
+  scale_fill_manual(values = cs1,
+                    breaks=c('Strong ',
+                             'Independant ',
+                             'Lean ',
+                             'Weak ')) +
+  labs(x="Age",  
+        y = "Predicted Probability",  
+       colour = "Response\nCategory")
+
+```
+
+
+In Figure 2, the probability of each age cohort identifying with different points on the party identification scale in shown.
+
+Independent: There is a slight decrease in the probability of identifying as an independent as we move through the older age cohorts. Younger individuals are more likely to identify as independents, but this likelihood declines with age.
+
+Lean Partisanship: There is an initial increase in the probability of identifying as a lean partisan in the middle age cohorts, but this trend reverses as individuals get older, with the probability decreasing in the older cohorts.
+
+Strong Partisanship: The probability of identifying as a strong partisan decreases in the younger cohorts, but as we move into older age groups, it increases significantly. This indicates that older individuals are more likely to hold strong partisan identities.
+
+Weak Partisanship: Identification as a weak partisan remains relatively stable across most cohorts, with minor fluctuations, but it experiences a notable drop in probability in the oldest cohorts.
+
+```{r, include=FALSE}
+#ew
+
+tab_model(m1, 
+          pred.labels = c("(Intercept)",
+                          "Age 25-29", 
+                          "Age 30-39", 
+                          "Age 40-49", 
+                          "Age 50-59", 
+                          "Age 60-69", 
+                          "Age 70-79", 
+                          "Age 80+", 
+                          "Race: Black", 
+                          "Race: Hispanic", 
+                          "Race: Multiple", 
+                          "Race: NA/AN", 
+                          "Race: White", 
+                          "Sex: Male", 
+                          "Income", 
+                          "Education", 
+                          "(Intercept)",
+                          "Age 25-29", 
+                          "Age 30-39", 
+                          "Age 40-49", 
+                          "Age 50-59", 
+                          "Age 60-69", 
+                          "Age 70-79", 
+                          "Age 80+", 
+                          "Race: Black", 
+                          "Race: Hispanic", 
+                          "Race: Multiple", 
+                          "Race: NA/AN", 
+                          "Race: White", 
+                          "Sex: Male", 
+                          "Income", 
+                          "Education",
+                          "(Intercept)",
+                          "Age 25-29", 
+                          "Age 30-39", 
+                          "Age 40-49", 
+                          "Age 50-59", 
+                          "Age 60-69", 
+                          "Age 70-79", 
+                          "Age 80+", 
+                          "Race: Black", 
+                          "Race: Hispanic", 
+                          "Race: Multiple", 
+                          "Race: NA/AN", 
+                          "Race: White", 
+                          "Sex: Male", 
+                          "Income", 
+                          "Education"))
+```
+
+```{r, message=FALSE, include=FALSE}
+
+m2 <- multinom(pd7 ~ age_cohort + race + sex+ income + education, data = anes_clean) 
+
+
+
+gg5 <- ggpredict(m2, terms=c("age_cohort")) 
+
+dd <- c("18-24",	"25-29",	"30-39",	"40-49",	"50-59",	"60-69",	"70-79",	"80+")
+
+# Convert x to a factor with the specified order
+gg5$x <- factor(gg5$x, levels = dd)
+
+ggplot(gg5, aes(x=x, y=predicted, colour=response.level)) + 
+  #geom_point(size = 3) + 
+  geom_jitter(shape = 19, width = 0.1, size = 3) +  
+  ggtitle("Figure 2") +
+  theme_bw() +  
+  theme(legend.position="right") +  
+  scale_fill_manual(values = cs1,
+                    breaks=c(
+    'Strong Democrat',    
+    'Weak Democrat' ,       
+    'Indep Democrat' ,     
+    'Independant' ,        
+    'Indep Republican' ,    
+    'Weak Republican' ,     
+    'Strong Republican' )) +
+  labs(x="Age",  
+        y = "Predicted Probability",  
+       colour = "Response\nCategory")
+
+```
+
+# Disscusion
+
+The analysis highlights patterns in party identification across different age cohorts. Younger individuals are more likely to identify as independents or lean partisans, but as age increases, the likelihood of identifying with stronger partisan identities grows. This supports the idea that partisan identification may solidify over time, with older individuals showing a stronger attachment to political parties, particularly through strong partisanship.
+
+This is important to consider as we discuss Independents today because although we may be pusehd to want to avoid the independent categorization altogether, I think  it is essential to recognize its importance, particularly when younger generations are involved.Many younger individuals have not yet fully developed their political identities, making the independent category a valuable tool for understanding their evolving political engagement. Ignoring this group could lead to an incomplete understanding of political behavior, especially as these cohorts age and solidify their affiliations.
